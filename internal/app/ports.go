@@ -8,7 +8,6 @@ package app
 
 import (
 	"errors"
-	"os"
 	"strings"
 
 	"github.com/lean-tech/git-rodolfo/internal/domain"
@@ -88,9 +87,12 @@ type SSHClient interface {
 	// DeleteKey removes the private key at path and its ".pub" file
 	// (RF-08). It's only ever called after explicit user confirmation.
 	DeleteKey(path string) error
-	// KeyFilePermissions returns path's file mode bits (e.g. 0o600), used
-	// by "doctor" to flag insecure private key permissions (§13.10 #3).
-	KeyFilePermissions(path string) (os.FileMode, error)
+	// KeyPermissionIssue reports whether path's private key permissions
+	// are unsafe, used by "doctor" to flag it (§13.10 #3, PRD 2 RF-46).
+	// cause=="" means secure; otherwise cause describes the problem and
+	// fixCommand is the exact command to fix it (chmod on Unix, icacls on
+	// Windows — POSIX mode bits aren't meaningful there).
+	KeyPermissionIssue(path string) (cause, fixCommand string, err error)
 	// ScanKeys lists every private key in dir that has a matching public
 	// key file and passes validation (RF-40, RF-42), so "account add" can
 	// offer them in its selector. Strictly read-only: it never creates,

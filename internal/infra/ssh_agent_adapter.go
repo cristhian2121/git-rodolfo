@@ -25,7 +25,12 @@ func NewSSHAgentAdapter() *SSHAgentAdapter {
 // exits 0 (has keys) or 1 ("no identities") when the agent is running, and
 // 2 when it can't connect to one at all.
 func (a *SSHAgentAdapter) IsRunning() bool {
-	if os.Getenv("SSH_AUTH_SOCK") == "" {
+	// Windows' native OpenSSH agent (RF-45) is a system service reachable
+	// over a fixed named pipe — it never sets SSH_AUTH_SOCK, so that quick
+	// early-out would always report "not running" there even when the
+	// service is up. ssh-add.exe itself knows how to reach the pipe, so
+	// just ask it directly on Windows.
+	if runtime.GOOS != "windows" && os.Getenv("SSH_AUTH_SOCK") == "" {
 		return false
 	}
 	cmd := exec.Command("ssh-add", "-l")

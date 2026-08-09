@@ -20,6 +20,16 @@ jobs:
           go-version: "1.21"
           cache: true
 
+      # The native Windows OpenSSH agent (RF-45) ships disabled by
+      # default, even on windows-latest runners — without starting it,
+      # ssh-agent-dependent tests just skip silently instead of actually
+      # exercising the named-pipe path.
+      - name: Start Windows OpenSSH agent
+        if: runner.os == 'Windows'
+        run: |
+          Set-Service ssh-agent -StartupType Manual
+          Start-Service ssh-agent
+
       - run: make test
 
       - run: make build
