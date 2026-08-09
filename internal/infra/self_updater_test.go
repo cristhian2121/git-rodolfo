@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -34,7 +35,13 @@ func TestSelfUpdater_Replace_ReplacesRunningExecutable(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	copyPath := filepath.Join(dir, "fake-git-rodolfo")
+	copyName := "fake-git-rodolfo"
+	if runtime.GOOS == "windows" {
+		// exec.Command on Windows treats a file without a recognized
+		// executable extension as nonexistent, even given a full path.
+		copyName += ".exe"
+	}
+	copyPath := filepath.Join(dir, copyName)
 	if err := os.WriteFile(copyPath, data, 0o755); err != nil {
 		t.Fatalf("write scratch copy: %v", err)
 	}

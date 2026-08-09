@@ -10,11 +10,17 @@ import (
 	"github.com/lean-tech/git-rodolfo/internal/domain"
 )
 
+// These two exercise defaultConfigPath("linux") directly rather than the
+// real DefaultConfigPath(): on an actual Windows machine, runtime.GOOS is
+// "windows", so DefaultConfigPath() would take the %USERPROFILE% branch
+// (see TestDefaultConfigPath_Windows below) and ignore XDG_CONFIG_HOME
+// entirely — by design. Calling the parameterized function keeps this
+// Unix-specific behavior testable on every OS that runs this suite.
 func TestDefaultConfigPath_HonorsXDGConfigHome(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "/xdg/config")
-	got, err := DefaultConfigPath()
+	got, err := defaultConfigPath("linux")
 	if err != nil {
-		t.Fatalf("DefaultConfigPath: %v", err)
+		t.Fatalf("defaultConfigPath: %v", err)
 	}
 	want := filepath.Join("/xdg/config", "git-rodolfo", "config.json")
 	if got != want {
@@ -24,9 +30,9 @@ func TestDefaultConfigPath_HonorsXDGConfigHome(t *testing.T) {
 
 func TestDefaultConfigPath_FallsBackToHomeConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "")
-	got, err := DefaultConfigPath()
+	got, err := defaultConfigPath("linux")
 	if err != nil {
-		t.Fatalf("DefaultConfigPath: %v", err)
+		t.Fatalf("defaultConfigPath: %v", err)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
