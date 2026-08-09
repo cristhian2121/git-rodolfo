@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/lean-tech/git-rodolfo/internal/domain"
 	"github.com/lean-tech/git-rodolfo/internal/infra/atomicfile"
@@ -26,8 +27,23 @@ func NewConfigRepository(path string) *ConfigRepository {
 }
 
 // DefaultConfigPath resolves ~/.config/git-rodolfo/config.json, honoring
-// XDG_CONFIG_HOME when set (PRD §17).
+// XDG_CONFIG_HOME when set (PRD §17), or %USERPROFILE%\.git-rodolfo\config.json
+// on Windows (PRD 2 §13, RF-44).
 func DefaultConfigPath() (string, error) {
+	return defaultConfigPath(runtime.GOOS)
+}
+
+// defaultConfigPath takes goos as a parameter so the Windows branch is
+// testable without actually running on Windows.
+func defaultConfigPath(goos string) (string, error) {
+	if goos == "windows" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve home directory: %w", err)
+		}
+		return filepath.Join(home, ".git-rodolfo", "config.json"), nil
+	}
+
 	base := os.Getenv("XDG_CONFIG_HOME")
 	if base == "" {
 		home, err := os.UserHomeDir()

@@ -32,7 +32,7 @@ jobs:
           if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
             echo "Release ${{ github.ref_name }} already exists, skipping creation."
           else
-            gh release create "${{ github.ref_name }}" dist/*.tar.gz \
+            gh release create "${{ github.ref_name }}" dist/*.tar.gz dist/*.zip \
               --title "${{ github.ref_name }}" \
               --generate-notes
           fi

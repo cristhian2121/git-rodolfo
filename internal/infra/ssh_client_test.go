@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -82,6 +83,13 @@ func TestSSHClient_PublicKeyContent_DerivesWithoutPubFile(t *testing.T) {
 
 func TestSSHClient_KeyFilePermissions(t *testing.T) {
 	requireSSHTools(t)
+	if runtime.GOOS == "windows" {
+		// os.Stat's mode bits are synthetic on Windows (always ~0666 for a
+		// writable file) — they don't reflect real ACL security at all.
+		// KeyFilePermissions gets replaced with an ACL-aware equivalent in
+		// PR2 (RF-46); nothing meaningful to assert here until then.
+		t.Skip("POSIX permission bits are not meaningful on Windows")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "id_test")
 	c := NewSSHClient()
