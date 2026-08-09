@@ -1,15 +1,13 @@
 # Homebrew formula template for git-rodolfo.
 #
-# This is a template, not a published formula: the url/sha256 pairs below
-# are placeholders. To cut a real release:
-#   1. Tag a version and push it (e.g. `git tag v0.1.0 && git push --tags`)
-#      and let CI (or `make release`) build and publish the four
-#      platform tarballs as GitHub release assets.
-#   2. Replace VERSION and each REPLACE_WITH_SHA256_OF_* below with the
-#      real tag and the checksums from that release's checksums.txt.
-#   3. Publish this file in a tap repository (e.g. cristhian2121/homebrew-tap
-#      as Formula/git-rodolfo.rb) so `brew install cristhian2121/tap/git-rodolfo`
-#      works — Homebrew does not accept formulas from arbitrary repos.
+# This file is a template, not the published formula: the "VERSION" and
+# "REPLACE_WITH_SHA256_OF_..." tokens below are placeholders, filled in
+# automatically by scripts/publish-homebrew-tap.sh. Tagging a release
+# (e.g. `git tag v0.3.0 && git push --tags`) triggers
+# .github/workflows/release.yml, which runs `make release`, publishes the
+# GitHub release, then runs that script to render this template with the
+# real version and checksums and push it to the tap repository
+# (cristhian2121/homebrew-tap) — no manual editing needed (RF-43).
 class GitRodolfo < Formula
   desc "Manage multiple Git/GitHub identities on one computer"
   homepage "https://github.com/cristhian2121/git-rodolfo"

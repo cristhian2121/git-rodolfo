@@ -22,3 +22,20 @@ func expandHome(path string) string {
 	}
 	return path
 }
+
+// displayPath collapses a leading home directory back to "~" for display —
+// the inverse of expandHome, used to show scanned key paths the way a user
+// would type them (RF-40).
+func displayPath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if path == home {
+		return "~"
+	}
+	if rest, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
+		return "~/" + rest
+	}
+	return path
+}

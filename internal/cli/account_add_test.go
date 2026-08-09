@@ -19,17 +19,18 @@ func addDeps(t *testing.T, stdin *os.File, repo *fakes.FakeAccountRepository, ss
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	return cli.Deps{
-		Accounts:   app.NewAccountService(repo),
-		AccountAdd: app.NewAccountAddService(repo, ssh, agent, fixedNow),
-		Auth:       app.NewAuthenticationService(ssh, repo, fixedNow),
-		SSH:        ssh,
-		Agent:      agent,
-		Provider:   fakes.NewFakeProviderClient(),
-		SSHDir:     t.TempDir(),
-		Stdout:     &stdout,
-		Stderr:     &stderr,
-		Stdin:      stdin,
-		Now:        fixedNow,
+		Accounts:    app.NewAccountService(repo),
+		AccountAdd:  app.NewAccountAddService(repo, ssh, agent, fixedNow),
+		Auth:        app.NewAuthenticationService(ssh, repo, fixedNow),
+		SSH:         ssh,
+		Agent:       agent,
+		Provider:    fakes.NewFakeProviderClient(),
+		AccountRepo: repo,
+		SSHDir:      t.TempDir(),
+		Stdout:      &stdout,
+		Stderr:      &stderr,
+		Stdin:       stdin,
+		Now:         fixedNow,
 	}, &stdout, &stderr
 }
 
@@ -391,5 +392,95 @@ func TestRun_AccountAddInteractive_GenerateKeyNoPassphrase(t *testing.T) {
 	}
 	if len(ssh.GeneratedKeys) != 1 || ssh.GeneratedKeys[0].WithPassphrase {
 		t.Fatalf("unexpected GenerateKey calls: %+v", ssh.GeneratedKeys)
+	}
+}
+
+// TestRun_AccountAddInteractive_ScannedKeyAvailable covers RF-40: a key
+// found scanning SSHDir is offered in the selector, and picking it
+// associates the account directly — no "Path to the private key" prompt.
+func TestRun_AccountAddInteractive_ScannedKeyAvailable(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	repo := fakes.NewFakeAccountRepository()
+	ssh := fakes.NewFakeSSHClient()
+	deps, stdout, stderr := addDeps(t, r, repo, ssh, fakes.NewFakeSSHAgentAdapter())
+
+	keyPath := filepath.Join(deps.SSHDir, "id_ed25519")
+	ssh.Keys[keyPath] = fakes.FakeKey{Valid: true, Fingerprint: "SHA256:scanned"}
+	ssh.ScanResults = map[string][]domain.SSHKeyCandidate{
+		deps.SSHDir: {{PrivateKeyPath: keyPath, PublicKeyPath: keyPath + ".pub", Fingerprint: "SHA256:scanned"}},
+	}
+
+	go func() {
+		defer w.Close()
+		w.WriteString("Lean Tech\n")
+		w.WriteString("cristhiandelgado-work\n")
+		w.WriteString("Cristhian Delgado\n")
+		w.WriteString("cristhian@leantech.com\n")
+		w.WriteString("1\n") // the scanned key
+	}()
+
+	code := cli.Run([]string{"account", "add"}, deps)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %s, stdout = %s", code, stderr.String(), stdout.String())
+	}
+	if strings.Contains(stdout.String(), "Path to the private key") {
+		t.Fatalf("should not have prompted for a path already known from the scan: %s", stdout.String())
+	}
+	saved, _ := repo.FindByID("lean-tech")
+	if saved == nil || saved.PrivateKeyPath != keyPath || saved.PublicKeyFingerprint != "SHA256:scanned" {
+		t.Fatalf("unexpected saved account: %+v", saved)
+	}
+}
+
+// TestRun_AccountAddInteractive_ScannedKeyInUse_Reprompts covers RF-41: a
+// scanned key already claimed by another account is shown, not hidden,
+// and selecting it re-prompts instead of letting it through.
+func TestRun_AccountAddInteractive_ScannedKeyInUse_Reprompts(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	repo := fakes.NewFakeAccountRepository(domain.Account{
+		ID:                   "lean-tech",
+		DisplayName:          "Lean Tech",
+		PublicKeyFingerprint: "SHA256:taken",
+	})
+	ssh := fakes.NewFakeSSHClient()
+	deps, stdout, stderr := addDeps(t, r, repo, ssh, fakes.NewFakeSSHAgentAdapter())
+
+	keyPath := filepath.Join(deps.SSHDir, "id_ed25519_work")
+	ssh.ScanResults = map[string][]domain.SSHKeyCandidate{
+		deps.SSHDir: {{PrivateKeyPath: keyPath, PublicKeyPath: keyPath + ".pub", Fingerprint: "SHA256:taken"}},
+	}
+
+	go func() {
+		defer w.Close()
+		w.WriteString("New Account\n")
+		w.WriteString("someone\n")
+		w.WriteString("Someone\n")
+		w.WriteString("someone@example.com\n")
+		w.WriteString("1\n") // the in-use scanned key — should re-prompt
+		w.WriteString("4\n") // now "Configure later"
+	}()
+
+	code := cli.Run([]string{"account", "add"}, deps)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr = %s, stdout = %s", code, stderr.String(), stdout.String())
+	}
+	if !strings.Contains(stdout.String(), `already used by account "Lean Tech"`) {
+		t.Fatalf("expected an in-use warning, got: %s", stdout.String())
+	}
+	saved, _ := repo.FindByID("new-account")
+	if saved == nil || saved.PrivateKeyPath != "" {
+		t.Fatalf("unexpected saved account: %+v", saved)
 	}
 }
