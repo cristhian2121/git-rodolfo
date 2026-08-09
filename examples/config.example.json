@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "settings": {
+    "lastUsedAccountId": "lean-tech"
+  },
+  "accounts": [
+    {
+      "id": "personal",
+      "displayName": "Personal",
+      "gitName": "Cristhian Delgado",
+      "gitEmail": "cristhian@gmail.com",
+      "provider": "github",
+      "providerUsername": "cristhiandelgado",
+      "hostname": "github.com",
+      "sshUser": "git",
+      "privateKeyPath": "~/.ssh/id_ed25519",
+      "publicKeyPath": "~/.ssh/id_ed25519.pub",
+      "publicKeyFingerprint": "SHA256:aaa",
+      "authenticationStatus": "verified",
+      "lastVerifiedAt": "2026-08-02T10:00:00Z",
+      "createdAt": "2026-08-01T00:00:00Z",
+      "updatedAt": "2026-08-01T00:00:00Z"
+    },
+    {
+      "id": "lean-tech",
+      "displayName": "Lean Tech",
+      "gitName": "Cristhian Delgado",
+      "gitEmail": "cristhian@leantech.com",
+      "provider": "github",
+      "providerUsername": "cristhiandelgado-work",
+      "hostname": "github.com",
+      "sshUser": "git",
+      "privateKeyPath": "~/.ssh/id_ed25519_leantech",
+      "publicKeyPath": "~/.ssh/id_ed25519_leantech.pub",
+      "publicKeyFingerprint": "SHA256:bbb",
+      "authenticationStatus": "verified",
+      "lastVerifiedAt": "2026-08-02T10:00:00Z",
+      "createdAt": "2026-08-01T00:00:00Z",
+      "updatedAt": "2026-08-01T00:00:00Z"
+    },
+    {
+      "id": "university",
+      "displayName": "University",
+      "gitName": "Cristhian Delgado",
+      "gitEmail": "cd@university.edu",
+      "provider": "github",
+      "providerUsername": "cd-university",
+      "hostname": "github.com",
+      "sshUser": "git",
+      "privateKeyPath": "~/.ssh/id_ed25519_university",
+      "publicKeyPath": "~/.ssh/id_ed25519_university.pub",
+      "publicKeyFingerprint": "SHA256:ccc",
+      "authenticationStatus": "failed",
+      "lastVerifiedAt": "2026-08-02T09:00:00Z",
+      "createdAt": "2026-08-01T00:00:00Z",
+      "updatedAt": "2026-08-01T00:00:00Z"
+    }
+  ]
+}

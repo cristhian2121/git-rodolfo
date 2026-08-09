@@ -1,0 +1,39 @@
+GO       ?= go
+VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS  := -s -w -X github.com/lean-tech/git-rodolfo/internal/cli.Version=$(VERSION)
+DIST     := dist
+
+.PHONY: build test lint install clean release
+
+build:
+	$(GO) build -ldflags "$(LDFLAGS)" -o git-rodolfo ./cmd/git-rodolfo
+
+test:
+	$(GO) vet ./...
+	$(GO) test ./... -race
+
+# Installs into $GOPATH/bin (usually ~/go/bin) as `git-rodolfo`. Make sure
+# that directory is on PATH so `git rodolfo <command>` finds it too
+# (PRD §12.1 — Git looks up `git-rodolfo` via PATH).
+install:
+	$(GO) install -ldflags "$(LDFLAGS)" ./cmd/git-rodolfo
+
+clean:
+	rm -rf $(DIST) git-rodolfo
+
+# Cross-compiles the release matrix (PRD §19.1/RNF-02: macOS + Linux).
+# Each binary is named git-rodolfo-<version>-<os>-<arch>; tar.gz archives
+# are what a Homebrew formula or install script would fetch from a
+# GitHub release.
+release: clean
+	mkdir -p $(DIST)
+	$(foreach GOOS,darwin linux, \
+		$(foreach GOARCH,amd64 arm64, \
+			GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -ldflags "$(LDFLAGS)" \
+				-o $(DIST)/git-rodolfo-$(VERSION)-$(GOOS)-$(GOARCH)/git-rodolfo \
+				./cmd/git-rodolfo && \
+			tar -C $(DIST)/git-rodolfo-$(VERSION)-$(GOOS)-$(GOARCH) -czf \
+				$(DIST)/git-rodolfo-$(VERSION)-$(GOOS)-$(GOARCH).tar.gz git-rodolfo ; \
+		) \
+	)
+	cd $(DIST) && shasum -a 256 *.tar.gz > checksums.txt

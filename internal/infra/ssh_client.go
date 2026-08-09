@@ -1,0 +1,209 @@
+package infra
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/lean-tech/git-rodolfo/internal/app"
+	"github.com/lean-tech/git-rodolfo/internal/domain"
+)
+
+// connectTimeout bounds network operations per RNF-03.
+const connectTimeout = 10 * time.Second
+
+// SSHClient shells out to the system's ssh-keygen and ssh binaries.
+//
+// It relies on one property of the modern OpenSSH private key format: the
+// public key is stored in cleartext alongside the encrypted private
+// portion. That means `ssh-keygen -l -f <private-key>` can report a key's
+// fingerprint without ever needing its passphrase, which is what lets
+// ValidateKey and PublicKeyFingerprint work non-interactively even on a
+// key Git Rodolfo has never seen unlocked (RF-11: it must never read,
+// request or store a passphrase).
+type SSHClient struct{}
+
+// NewSSHClient returns an SSHClient backed by the system's ssh-keygen/ssh.
+func NewSSHClient() *SSHClient {
+	return &SSHClient{}
+}
+
+// GenerateKey creates a new Ed25519 key pair (RF-06). When withPassphrase
+// is true, ssh-keygen's own passphrase prompts are connected directly to
+// the caller's terminal — this process never sees the passphrase.
+func (c *SSHClient) GenerateKey(path, comment string, withPassphrase, overwrite bool) error {
+	if _, err := os.Stat(path); err == nil {
+		if !overwrite {
+			return app.ErrKeyFileExists
+		}
+		os.Remove(path)
+		os.Remove(path + ".pub")
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("check existing key at %s: %w", path, err)
+	}
+
+	args := []string{"-t", "ed25519", "-C", comment, "-f", path}
+	if !withPassphrase {
+		args = append(args, "-N", "")
+	}
+
+	cmd := exec.Command("ssh-keygen", args...)
+	if withPassphrase {
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
+	var stderr bytes.Buffer
+	if !withPassphrase {
+		cmd.Stderr = &stderr
+	}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ssh-keygen: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+// ValidateKey reports whether path is a readable, well-formed private key.
+func (c *SSHClient) ValidateKey(path string) error {
+	var stderr bytes.Buffer
+	cmd := exec.Command("ssh-keygen", "-l", "-f", path)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s is not a valid SSH key: %s", path, firstLine(stderr.String()))
+	}
+	return nil
+}
+
+// PublicKeyFingerprint returns the key's SHA256 fingerprint (RF-07).
+func (c *SSHClient) PublicKeyFingerprint(path string) (string, error) {
+	var stdout, stderr bytes.Buffer
+	cmd := exec.Command("ssh-keygen", "-l", "-f", path)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("%s is not a valid SSH key: %s", path, firstLine(stderr.String()))
+	}
+
+	// Typical line: "256 SHA256:AAAA...xyz comment (ED25519)"
+	fields := strings.Fields(stdout.String())
+	for _, f := range fields {
+		if strings.HasPrefix(f, "SHA256:") {
+			return f, nil
+		}
+	}
+	return "", fmt.Errorf("could not parse fingerprint from ssh-keygen output: %q", stdout.String())
+}
+
+// PublicKeyContent returns the public key line for the private key at
+// path — the .pub file next to it if present, otherwise derived directly
+// from the private key via ssh-keygen -y (which needs no passphrase for
+// the OpenSSH key format this client generates; see the package doc).
+func (c *SSHClient) PublicKeyContent(path string) (string, error) {
+	if data, err := os.ReadFile(path + ".pub"); err == nil {
+		return strings.TrimSpace(string(data)), nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd := exec.Command("ssh-keygen", "-y", "-f", path)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("derive public key for %s: %s", path, firstLine(stderr.String()))
+	}
+	return strings.TrimSpace(stdout.String()), nil
+}
+
+// KeyFilePermissions returns path's file mode bits (§13.10 #3).
+func (c *SSHClient) KeyFilePermissions(path string) (os.FileMode, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, fmt.Errorf("stat %s: %w", path, err)
+	}
+	return info.Mode().Perm(), nil
+}
+
+// DeleteKey removes the private key at path and its ".pub" file (RF-08).
+// A missing .pub file is not an error — the private key is still deleted.
+func (c *SSHClient) DeleteKey(path string) error {
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("delete %s: %w", path, err)
+	}
+	if err := os.Remove(path + ".pub"); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("delete %s.pub: %w", path, err)
+	}
+	return nil
+}
+
+// KeyHasPassphrase reports whether path is encrypted, without decrypting
+// it: ssh-keygen -y with an empty passphrase either succeeds (no
+// passphrase) or fails with "incorrect passphrase" (has one).
+func (c *SSHClient) KeyHasPassphrase(path string) (bool, error) {
+	var stderr bytes.Buffer
+	cmd := exec.Command("ssh-keygen", "-y", "-f", path, "-P", "")
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err == nil {
+		return false, nil
+	}
+	msg := stderr.String()
+	if strings.Contains(msg, "incorrect passphrase") || strings.Contains(msg, "bad passphrase") {
+		return true, nil
+	}
+	return false, fmt.Errorf("%s: %s", path, firstLine(msg))
+}
+
+var authenticatedUserPattern = regexp.MustCompile(`Hi ([^!]+)!`)
+
+// TestConnectionWithKey forces the given key and reports whether GitHub
+// accepted it. Per §4.5, `ssh -T` always exits 1 even on success, so
+// success is read from the output, never the exit code.
+func (c *SSHClient) TestConnectionWithKey(host, keyPath string) (domain.AuthResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ssh",
+		"-T",
+		"-i", keyPath,
+		"-o", "IdentitiesOnly=yes",
+		"-o", "BatchMode=yes",
+		"-o", "StrictHostKeyChecking=accept-new",
+		fmt.Sprintf("git@%s", host),
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			return domain.AuthResult{}, fmt.Errorf("run ssh: %w", err)
+		}
+		// A non-zero exit is expected even on success (§4.5); it also
+		// covers real auth failures, which we report via RawOutput below.
+	}
+
+	return parseAuthResult(string(out)), nil
+}
+
+// parseAuthResult is the §4.5 rule as a pure function: success is read from
+// the text ("Hi <user>! You've successfully authenticated"), never from the
+// exit code. Kept separate from TestConnectionWithKey so it can be unit
+// tested against fixture output without a network connection.
+func parseAuthResult(output string) domain.AuthResult {
+	match := authenticatedUserPattern.FindStringSubmatch(output)
+	if match == nil {
+		return domain.AuthResult{Success: false, RawOutput: output}
+	}
+	return domain.AuthResult{Success: true, Username: match[1], RawOutput: output}
+}
+
+func firstLine(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
