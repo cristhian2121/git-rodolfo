@@ -26,14 +26,19 @@ Commands:
   use [account] [--clear]        Assign (or clear) an account for this repository
   current                        Show which account this repository is using
   doctor                         Diagnose Git/SSH/GitHub configuration issues
+  completion <bash|zsh|fish>     Print a shell completion script
+  update [--version <tag>]       Update git-rodolfo itself to the latest (or a given) release
   help                           Show this help text
+
+Run "<command> --help" (e.g. "account add --help") for details on a
+specific command.
 
 Global flags:
   --non-interactive            Fail instead of prompting
   --yes                        Assume "yes" for non-destructive confirmations
   --verbose                    Print the underlying commands being run
 
-Run "git-rodolfo --version" to print the version.
+Run "git-rodolfo --version" (or "-v") to print the version.
 `
 
 func printHelp(w io.Writer) {

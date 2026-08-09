@@ -3,6 +3,16 @@ VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev
 LDFLAGS  := -s -w -X github.com/lean-tech/git-rodolfo/internal/cli.Version=$(VERSION)
 DIST     := dist
 
+# git-rodolfo needs no C bindings, so cgo is off everywhere: it's what
+# keeps builds fully static and portable, and it sidesteps a real failure
+# mode this project hit — with cgo on, `update`'s use of net/http makes
+# the binary link against libSystem's resolver, and on at least one dev
+# machine (mismatched Xcode Command Line Tools vs. the actual macOS SDK)
+# that produced a binary dyld refused to even start
+# ("missing LC_UUID load command"). CGO_ENABLED=0 avoids that class of
+# toolchain fragility entirely, not just paper over one broken machine.
+export CGO_ENABLED = 0
+
 .PHONY: build test lint install clean release
 
 build:

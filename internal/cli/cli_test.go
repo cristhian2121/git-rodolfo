@@ -179,12 +179,14 @@ func TestRun_HelpAndVersion(t *testing.T) {
 		}
 	}
 
-	deps, stdout, _ := newDeps()
-	if code := cli.Run([]string{"--version"}, deps); code != 0 {
-		t.Fatalf("exit code = %d", code)
-	}
-	if !strings.Contains(stdout.String(), cli.Version) {
-		t.Fatalf("expected version %q in output, got: %s", cli.Version, stdout.String())
+	for _, args := range [][]string{{"--version"}, {"-v"}} {
+		deps, stdout, _ := newDeps()
+		if code := cli.Run(args, deps); code != 0 {
+			t.Fatalf("%v: exit code = %d", args, code)
+		}
+		if !strings.Contains(stdout.String(), cli.Version) {
+			t.Fatalf("%v: expected version %q in output, got: %s", args, cli.Version, stdout.String())
+		}
 	}
 }
 

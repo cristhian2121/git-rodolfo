@@ -21,10 +21,12 @@ type Deps struct {
 	Auth            *app.AuthenticationService
 	Clone           *app.CloneService
 	ErrorTranslator *app.ErrorTranslator
+	Update          *app.UpdateService
 	Env             app.EnvironmentInspector
 	SSH             app.SSHClient
 	Agent           app.SSHAgentAdapter
 	Provider        app.ProviderClient
+	SelfUpdater     app.SelfUpdater
 
 	// AccountRepo, Mechanism and NewGitClient build a
 	// RepositoryIdentityService bound to the current working directory —
@@ -66,11 +68,21 @@ func Run(args []string, deps Deps) int {
 		return 0
 	}
 
+	// "<command> --help" / "<command> -h" short-circuits before any
+	// subcommand parses its own flags, so it never depends on (or
+	// fights with) each command's own flag.FlagSet or manual parsing.
+	if hasHelpFlag(rest[1:]) {
+		if text, ok := commandHelpText[commandHelpKey(rest)]; ok {
+			fmt.Fprint(deps.Stdout, text)
+			return 0
+		}
+	}
+
 	switch rest[0] {
 	case "help", "--help", "-h":
 		printHelp(deps.Stdout)
 		return 0
-	case "--version":
+	case "--version", "-v":
 		printVersion(deps.Stdout)
 		return 0
 	case "accounts":
@@ -85,6 +97,10 @@ func Run(args []string, deps Deps) int {
 		return runCurrent(deps, rest[1:])
 	case "doctor":
 		return runDoctor(deps, rest[1:])
+	case "completion":
+		return runCompletion(deps, rest[1:])
+	case "update":
+		return runUpdate(deps, globalFlags, rest[1:])
 	default:
 		fmt.Fprintf(deps.Stderr, "git-rodolfo: unknown command %q\n\n", rest[0])
 		printHelp(deps.Stderr)

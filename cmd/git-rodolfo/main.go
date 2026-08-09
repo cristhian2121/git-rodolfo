@@ -9,12 +9,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/lean-tech/git-rodolfo/internal/app"
 	"github.com/lean-tech/git-rodolfo/internal/cli"
 	"github.com/lean-tech/git-rodolfo/internal/infra"
 )
+
+// defaultReleaseRepo is where "git-rodolfo update" looks for releases,
+// matching scripts/install.sh's own default. Override with
+// GIT_RODOLFO_REPO (e.g. for a fork), same as that script.
+const defaultReleaseRepo = "cristhian2121/git-rodolfo"
 
 func main() {
 	path, err := infra.DefaultConfigPath()
@@ -36,6 +42,13 @@ func main() {
 	mechanism := app.NewSSHCommandMechanism()
 	newGitClient := func(dir string) app.GitClient { return infra.NewGitClient(dir) }
 
+	releaseRepo := os.Getenv("GIT_RODOLFO_REPO")
+	if releaseRepo == "" {
+		releaseRepo = defaultReleaseRepo
+	}
+	releaseFetcher := infra.NewGitHubReleaseFetcher(releaseRepo)
+	assetDownloader := infra.NewHTTPAssetDownloader()
+
 	deps := cli.Deps{
 		Accounts:        app.NewAccountService(repo),
 		AccountAdd:      app.NewAccountAddService(repo, sshClient, agent, time.Now),
@@ -44,10 +57,12 @@ func main() {
 		Auth:            app.NewAuthenticationService(sshClient, repo, time.Now),
 		Clone:           app.NewCloneService(infra.NewGitClient(""), newGitClient, mechanism),
 		ErrorTranslator: app.NewErrorTranslator(repo),
+		Update:          app.NewUpdateService(releaseFetcher, assetDownloader, runtime.GOOS, runtime.GOARCH, cli.Version),
 		Env:             infra.NewEnvironmentInspector(),
 		SSH:             sshClient,
 		Agent:           agent,
 		Provider:        provider,
+		SelfUpdater:     infra.NewSelfUpdater(),
 		AccountRepo:     repo,
 		Mechanism:       mechanism,
 		NewGitClient:    newGitClient,

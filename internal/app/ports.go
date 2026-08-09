@@ -129,3 +129,39 @@ type EnvironmentInspector interface {
 	// GIT_SSH_COMMAND overriding core.sshCommand (§12.2, §13.10 #8).
 	Getenv(key string) string
 }
+
+// ReleaseAsset is one downloadable file attached to a GitHub release.
+type ReleaseAsset struct {
+	Name        string
+	DownloadURL string
+}
+
+// ReleaseInfo is the subset of a GitHub release the "update" command
+// needs: its tag and the assets available for it.
+type ReleaseInfo struct {
+	TagName string
+	Assets  []ReleaseAsset
+}
+
+// ReleaseFetcher looks up release metadata for "git-rodolfo update"
+// (explicitly user-requested, so it doesn't run afoul of RNF-08's "no
+// telemetry" rule — it only ever runs when the user types the command).
+type ReleaseFetcher interface {
+	// Latest returns the most recent published release.
+	Latest() (ReleaseInfo, error)
+	// ByTag returns the release tagged exactly tag (e.g. "v0.2.0").
+	ByTag(tag string) (ReleaseInfo, error)
+}
+
+// AssetDownloader fetches a release asset's raw bytes (the release
+// tarball) given the URL ReleaseFetcher reported for it.
+type AssetDownloader interface {
+	Download(url string) ([]byte, error)
+}
+
+// SelfUpdater replaces the currently running executable with newBinary's
+// bytes (UpdateService.Update already extracted it from the release
+// tarball). Only ever called after the user has explicitly confirmed.
+type SelfUpdater interface {
+	Replace(newBinary []byte) error
+}
