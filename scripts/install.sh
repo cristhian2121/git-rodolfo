@@ -3,14 +3,14 @@
 # current OS/architecture and placing the binary on PATH.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/lean-tech/git-rodolfo/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/cristhian2121/git-rodolfo/main/scripts/install.sh | bash
 #
 # Requires: curl, tar. Set GIT_RODOLFO_REPO to point at a different
 # owner/repo (e.g. a fork), and GIT_RODOLFO_INSTALL_DIR to install
 # somewhere other than /usr/local/bin.
 set -euo pipefail
 
-REPO="${GIT_RODOLFO_REPO:-lean-tech/git-rodolfo}"
+REPO="${GIT_RODOLFO_REPO:-cristhian2121/git-rodolfo}"
 INSTALL_DIR="${GIT_RODOLFO_INSTALL_DIR:-/usr/local/bin}"
 
 os="$(uname -s)"
