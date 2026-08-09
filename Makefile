@@ -20,7 +20,11 @@ build:
 
 test:
 	$(GO) vet ./...
-	$(GO) test ./... -race
+	@if [ "$$($(GO) env GOOS)" = "linux" ]; then \
+		CGO_ENABLED=1 $(GO) test ./... -race; \
+	else \
+		$(GO) test ./... -race; \
+	fi
 
 # Installs into $GOPATH/bin (usually ~/go/bin) as `git-rodolfo`. Make sure
 # that directory is on PATH so `git rodolfo <command>` finds it too
