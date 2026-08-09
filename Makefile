@@ -20,7 +20,8 @@ build:
 
 test:
 	$(GO) vet ./...
-	@if [ "$$($(GO) env GOOS)" = "linux" ]; then \
+	@GOOS="$$($(GO) env GOOS)"; \
+	if [ "$$GOOS" = "linux" ] || [ "$$GOOS" = "windows" ]; then \
 		CGO_ENABLED=1 $(GO) test ./... -race; \
 	else \
 		$(GO) test ./... -race; \
