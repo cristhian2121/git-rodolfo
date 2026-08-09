@@ -30,6 +30,10 @@ Either way, make sure the install directory is on `PATH` — Git looks up
 `git-rodolfo` there to make `git rodolfo <command>` work (PRD §12.1).
 
 Already installed? Run `git-rodolfo update` to pull the latest release.
+If your installed version predates `update` (it'll say "unknown command"),
+just re-run the install command above — it overwrites the binary in place,
+no separate uninstall needed. Either way, your registered accounts aren't
+affected: they live separately in `~/.config/git-rodolfo/config.json`.
 
 ## Usage
 
@@ -53,6 +57,28 @@ Accounts are stored in `~/.config/git-rodolfo/config.json` (or
 `$XDG_CONFIG_HOME/git-rodolfo/config.json`). Copy `examples/config.example.json`
 there to explore the read-only commands (`accounts`, `account show`) without
 registering a real account first.
+
+### Registering accounts you already have
+
+Already have SSH keys on disk for two or more GitHub accounts, but aren't
+sure which key belongs to which? Ask GitHub directly, before running
+`account add`:
+
+```bash
+ssh -T -i ~/.ssh/id_ed25519_work -o IdentitiesOnly=yes git@github.com
+```
+
+Look for `Hi <username>!` in the output — that's the account that key
+belongs to. Repeat per key. (This command always exits with a non-zero
+status even on success — that's GitHub's own behavior; only the `Hi ...!`
+text matters, not the exit code.)
+
+Then, in `account add`'s wizard, pick **"Use an existing key"** and give it
+that path — no need to generate anything new. When it later asks **"How do
+you want to register the public key?"**, that's about optionally uploading
+your *public* key to GitHub via `gh`; it never touches the private key. If
+the `ssh -T` check above already worked, the key is already registered —
+pick **"Configure later"**, there's nothing left to do.
 
 ## Build
 
