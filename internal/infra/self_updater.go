@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/lean-tech/git-rodolfo/internal/infra/atomicfile"
 )
@@ -24,6 +25,16 @@ func NewSelfUpdater() *SelfUpdater {
 }
 
 func (s *SelfUpdater) Replace(newBinary []byte) error {
+	if runtime.GOOS == "windows" {
+		// Renaming a new file over the currently-running executable's own
+		// path fails on Windows with a raw "Access is denied" — Windows
+		// locks a running exe against this the way Unix's rename(2)
+		// never does. RF-47's rename-current-to-.old-first pattern (a
+		// follow-up PR) is what makes this actually work; fail clearly
+		// here in the meantime instead of leaking that OS error.
+		return fmt.Errorf("self-update is not yet supported on Windows")
+	}
+
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate the running executable: %w", err)

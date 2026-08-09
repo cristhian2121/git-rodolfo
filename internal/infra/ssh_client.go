@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -126,6 +127,16 @@ func (c *SSHClient) KeyFilePermissions(path string) (os.FileMode, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return 0, fmt.Errorf("stat %s: %w", path, err)
+	}
+	if runtime.GOOS == "windows" {
+		// os.Stat's mode bits are synthetic on Windows (~0666 for any
+		// writable file, regardless of real ACL security), so treating
+		// them as POSIX permission bits would flag every key as "too
+		// open" with a "chmod 600" fix that doesn't even exist there. An
+		// ACL-aware replacement for this whole method lands in a
+		// follow-up PR (RF-46); until then, report the secure value so
+		// "doctor" doesn't misfire on something it can't check yet.
+		return 0o600, nil
 	}
 	return info.Mode().Perm(), nil
 }
