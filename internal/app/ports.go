@@ -91,6 +91,12 @@ type SSHClient interface {
 	// KeyFilePermissions returns path's file mode bits (e.g. 0o600), used
 	// by "doctor" to flag insecure private key permissions (§13.10 #3).
 	KeyFilePermissions(path string) (os.FileMode, error)
+	// ScanKeys lists every private key in dir that has a matching public
+	// key file and passes validation (RF-40, RF-42), so "account add" can
+	// offer them in its selector. Strictly read-only: it never creates,
+	// moves or modifies anything in dir. A missing dir is not an error —
+	// it just yields no candidates.
+	ScanKeys(dir string) ([]domain.SSHKeyCandidate, error)
 }
 
 // SSHAgentAdapter wraps the running ssh-agent, if any.

@@ -149,31 +149,8 @@ func runAccountAddInteractive(deps Deps) int {
 		GitEmail:         commitEmail,
 	}
 
-	keyChoice, err := session.Select("SSH key", []string{
-		"Generate a new key",
-		"Use an existing key",
-		"Configure later",
-	})
-	if errors.Is(err, prompt.ErrCanceled) {
-		fmt.Fprintln(deps.Stderr, "Canceled.")
-		return 1
-	}
-	if err != nil {
-		fmt.Fprintf(deps.Stderr, "git-rodolfo: %v\n", err)
-		return 1
-	}
-
-	switch keyChoice {
-	case 0:
-		if code := fillGenerateKey(session, deps, &input); code != 0 {
-			return code
-		}
-	case 1:
-		if code := fillExistingKey(session, deps, &input); code != 0 {
-			return code
-		}
-	case 2:
-		input.KeyMode = app.KeyModeConfigureLater
+	if code := fillKeyChoice(session, deps, &input); code != 0 {
+		return code
 	}
 
 	registration := ""
@@ -200,6 +177,81 @@ func runAccountAddInteractive(deps Deps) int {
 	}
 
 	return finishAccountAdd(deps, account, input.KeyMode, registration)
+}
+
+// fillKeyChoice shows the "SSH key" selector (§13.2), prepending any key
+// found scanning deps.SSHDir (RF-40) to the three static options that have
+// always been there. A scanned key already claimed by another account is
+// still shown, marked as such (RF-41) — picking it re-prompts instead of
+// silently hiding it, since there's no way to disable a single entry in
+// prompt.Session's arrow-key selector.
+func fillKeyChoice(session *prompt.Session, deps Deps, input *app.AccountAddInput) int {
+	scanned, err := app.ScanAvailableKeys(deps.SSH, deps.AccountRepo, deps.SSHDir)
+	if err != nil {
+		fmt.Fprintf(deps.Stderr, "git-rodolfo: %v\n", err)
+		return 1
+	}
+
+	for {
+		labels := make([]string, 0, len(scanned)+3)
+		for _, o := range scanned {
+			label := "Use " + displayPath(o.PrivateKeyPath)
+			if o.InUseBy != "" {
+				label = fmt.Sprintf("%s — already used by %q", displayPath(o.PrivateKeyPath), o.InUseBy)
+			}
+			labels = append(labels, label)
+		}
+		labels = append(labels, "Generate a new key", "Use an existing key", "Configure later")
+
+		choice, err := session.Select("SSH key", labels)
+		if errors.Is(err, prompt.ErrCanceled) {
+			fmt.Fprintln(deps.Stderr, "Canceled.")
+			return 1
+		}
+		if err != nil {
+			fmt.Fprintf(deps.Stderr, "git-rodolfo: %v\n", err)
+			return 1
+		}
+
+		if choice < len(scanned) {
+			o := scanned[choice]
+			if o.InUseBy != "" {
+				fmt.Fprintf(deps.Stdout, "\nThe key %s is already used by account %q. Choose a different one.\n\n", displayPath(o.PrivateKeyPath), o.InUseBy)
+				continue
+			}
+			return useScannedKey(session, deps, input, o)
+		}
+
+		switch choice - len(scanned) {
+		case 0:
+			return fillGenerateKey(session, deps, input)
+		case 1:
+			return fillExistingKey(session, deps, input)
+		default:
+			input.KeyMode = app.KeyModeConfigureLater
+			return 0
+		}
+	}
+}
+
+// useScannedKey associates a key RF-40 already found and validated, so the
+// user never has to retype a path the tool already scanned (RF-40's whole
+// point). It's the same passphrase-then-agent flow fillExistingKey runs
+// after reading a path from the prompt.
+func useScannedKey(session *prompt.Session, deps Deps, input *app.AccountAddInput, o app.SSHKeyOption) int {
+	hasPassphrase, err := deps.SSH.KeyHasPassphrase(o.PrivateKeyPath)
+	if err != nil {
+		fmt.Fprintf(deps.Stderr, "git-rodolfo: %v\n", err)
+		return 1
+	}
+
+	input.KeyMode = app.KeyModeExisting
+	input.KeyPath = o.PrivateKeyPath
+
+	if hasPassphrase {
+		fillAgentChoice(session, deps, input)
+	}
+	return 0
 }
 
 func fillGenerateKey(session *prompt.Session, deps Deps, input *app.AccountAddInput) int {

@@ -20,6 +20,11 @@ type FakeSSHClient struct {
 	GenerateFingerprint string
 	DeletedKeys         []string
 	DeleteErr           error
+
+	// ScanResults is keyed by the directory ScanKeys is called with,
+	// standing in for what a real directory scan would find.
+	ScanResults map[string][]domain.SSHKeyCandidate
+	ScanErr     error
 }
 
 // FakeKey is the seeded state of one SSH key.
@@ -111,6 +116,13 @@ func (f *FakeSSHClient) KeyFilePermissions(path string) (os.FileMode, error) {
 		return 0o600, nil
 	}
 	return key.Permissions, nil
+}
+
+func (f *FakeSSHClient) ScanKeys(dir string) ([]domain.SSHKeyCandidate, error) {
+	if f.ScanErr != nil {
+		return nil, f.ScanErr
+	}
+	return f.ScanResults[dir], nil
 }
 
 func (f *FakeSSHClient) DeleteKey(path string) error {

@@ -231,3 +231,68 @@ func TestParseAuthResult(t *testing.T) {
 		})
 	}
 }
+
+// TestSSHClient_ScanKeys covers RF-40/RF-42: only well-formed pairs (a
+// private key with a matching, valid .pub) come back, orphaned files on
+// either side are skipped, and a missing directory yields no candidates
+// rather than an error.
+func TestSSHClient_ScanKeys(t *testing.T) {
+	requireSSHTools(t)
+	dir := t.TempDir()
+	c := NewSSHClient()
+
+	keyA := filepath.Join(dir, "id_ed25519_a")
+	if err := c.GenerateKey(keyA, "a@example.com", false, false); err != nil {
+		t.Fatalf("generate a: %v", err)
+	}
+	keyB := filepath.Join(dir, "id_ed25519_b")
+	if err := c.GenerateKey(keyB, "b@example.com", false, false); err != nil {
+		t.Fatalf("generate b: %v", err)
+	}
+
+	// Orphaned .pub with no private key next to it.
+	if err := os.WriteFile(filepath.Join(dir, "orphan.pub"), []byte("ssh-ed25519 AAAA orphan\n"), 0o644); err != nil {
+		t.Fatalf("write orphan.pub: %v", err)
+	}
+	// Private key with no .pub at all — not a candidate (needs both files).
+	if err := os.WriteFile(filepath.Join(dir, "no_pub"), []byte("not a real key"), 0o600); err != nil {
+		t.Fatalf("write no_pub: %v", err)
+	}
+	// A ".pub" sitting next to a file that isn't a valid private key.
+	if err := os.WriteFile(filepath.Join(dir, "corrupt"), []byte("garbage"), 0o600); err != nil {
+		t.Fatalf("write corrupt: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "corrupt.pub"), []byte("ssh-ed25519 AAAA corrupt\n"), 0o644); err != nil {
+		t.Fatalf("write corrupt.pub: %v", err)
+	}
+
+	got, err := c.ScanKeys(dir)
+	if err != nil {
+		t.Fatalf("ScanKeys: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d candidates, want 2: %+v", len(got), got)
+	}
+	for _, cand := range got {
+		if cand.PrivateKeyPath != keyA && cand.PrivateKeyPath != keyB {
+			t.Fatalf("unexpected candidate %q", cand.PrivateKeyPath)
+		}
+		if cand.PublicKeyPath != cand.PrivateKeyPath+".pub" {
+			t.Fatalf("PublicKeyPath = %q, want %q.pub", cand.PublicKeyPath, cand.PrivateKeyPath)
+		}
+		if !strings.HasPrefix(cand.Fingerprint, "SHA256:") {
+			t.Fatalf("unexpected fingerprint format: %q", cand.Fingerprint)
+		}
+	}
+}
+
+func TestSSHClient_ScanKeys_MissingDir(t *testing.T) {
+	c := NewSSHClient()
+	got, err := c.ScanKeys(filepath.Join(t.TempDir(), "does-not-exist"))
+	if err != nil {
+		t.Fatalf("ScanKeys on missing dir: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("got %v, want nil", got)
+	}
+}

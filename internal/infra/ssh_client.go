@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -126,6 +128,55 @@ func (c *SSHClient) KeyFilePermissions(path string) (os.FileMode, error) {
 		return 0, fmt.Errorf("stat %s: %w", path, err)
 	}
 	return info.Mode().Perm(), nil
+}
+
+// ScanKeys lists usable private keys in dir (RF-40, RF-42): every file
+// whose name ends in ".pub" that has a matching private key next to it
+// (same name, without the suffix) and validates. A missing dir yields no
+// candidates, not an error — a fresh install has no ~/.ssh yet. Anything
+// that doesn't validate is silently skipped: it isn't "a key" as far as
+// the selector is concerned, and RF-42 doesn't ask to report it.
+//
+// Validity is read off PublicKeyFingerprint's own error rather than also
+// calling ValidateKey first: both run the same `ssh-keygen -l -f` under
+// the hood, so calling both would shell out twice per candidate for no
+// extra information.
+func (c *SSHClient) ScanKeys(dir string) ([]domain.SSHKeyCandidate, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	names := make([]string, len(entries))
+	for i, e := range entries {
+		names[i] = e.Name()
+	}
+	sort.Strings(names)
+
+	var candidates []domain.SSHKeyCandidate
+	for _, name := range names {
+		if !strings.HasSuffix(name, ".pub") {
+			continue
+		}
+		pub := filepath.Join(dir, name)
+		priv := strings.TrimSuffix(pub, ".pub")
+		if _, err := os.Stat(priv); err != nil {
+			continue
+		}
+		fp, err := c.PublicKeyFingerprint(priv)
+		if err != nil {
+			continue
+		}
+		candidates = append(candidates, domain.SSHKeyCandidate{
+			PrivateKeyPath: priv,
+			PublicKeyPath:  pub,
+			Fingerprint:    fp,
+		})
+	}
+	return candidates, nil
 }
 
 // DeleteKey removes the private key at path and its ".pub" file (RF-08).
