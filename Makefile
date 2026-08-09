@@ -35,10 +35,10 @@ install:
 clean:
 	rm -rf $(DIST) git-rodolfo
 
-# Cross-compiles the release matrix (PRD §19.1/RNF-02: macOS + Linux).
-# Each binary is named git-rodolfo-<version>-<os>-<arch>; tar.gz archives
-# are what a Homebrew formula or install script would fetch from a
-# GitHub release.
+# Cross-compiles the release matrix (PRD §19.1/RNF-02: macOS + Linux +
+# Windows). Each binary is named git-rodolfo-<version>-<os>-<arch>; Unix
+# platforms ship as tar.gz, Windows as zip (PRD 2 RF-49, Windows convention
+# — also avoids tar's execute-bit handling, meaningless for a .exe).
 release: clean
 	mkdir -p $(DIST)
 	$(foreach GOOS,darwin linux, \
@@ -50,4 +50,10 @@ release: clean
 				$(DIST)/git-rodolfo-$(VERSION)-$(GOOS)-$(GOARCH).tar.gz git-rodolfo ; \
 		) \
 	)
-	cd $(DIST) && shasum -a 256 *.tar.gz > checksums.txt
+	$(foreach GOARCH,amd64 arm64, \
+		GOOS=windows GOARCH=$(GOARCH) $(GO) build -ldflags "$(LDFLAGS)" \
+			-o $(DIST)/git-rodolfo-$(VERSION)-windows-$(GOARCH)/git-rodolfo.exe \
+			./cmd/git-rodolfo && \
+		(cd $(DIST)/git-rodolfo-$(VERSION)-windows-$(GOARCH) && zip -q ../git-rodolfo-$(VERSION)-windows-$(GOARCH).zip git-rodolfo.exe) ; \
+	)
+	cd $(DIST) && shasum -a 256 *.tar.gz *.zip > checksums.txt

@@ -38,6 +38,24 @@ func TestDefaultConfigPath_FallsBackToHomeConfig(t *testing.T) {
 	}
 }
 
+// TestDefaultConfigPath_Windows covers RF-44 (%USERPROFILE%\.git-rodolfo\
+// config.json) without needing to actually run on Windows: goos is passed
+// as a parameter precisely so this is testable everywhere.
+func TestDefaultConfigPath_Windows(t *testing.T) {
+	got, err := defaultConfigPath("windows")
+	if err != nil {
+		t.Fatalf("defaultConfigPath: %v", err)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir: %v", err)
+	}
+	want := filepath.Join(home, ".git-rodolfo", "config.json")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
 func newTestAccount(id string) domain.Account {
 	return domain.Account{
 		ID:                   id,

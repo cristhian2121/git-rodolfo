@@ -14,6 +14,8 @@ func copyToClipboard(text string) error {
 	switch runtime.GOOS {
 	case "darwin":
 		cmd = exec.Command("pbcopy")
+	case "windows":
+		cmd = exec.Command("clip")
 	default:
 		if _, err := exec.LookPath("xclip"); err == nil {
 			cmd = exec.Command("xclip", "-selection", "clipboard")
