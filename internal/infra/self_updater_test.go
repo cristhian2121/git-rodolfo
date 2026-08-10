@@ -24,15 +24,6 @@ func TestSelfUpdater_Replace_ReplacesRunningExecutable(t *testing.T) {
 		runSelfUpdaterHelper()
 		return
 	}
-	if runtime.GOOS == "windows" {
-		// Confirmed on windows-latest CI: renaming a new file over the
-		// path of the currently-running executable fails with "Access is
-		// denied" — Windows locks a running exe against this the way
-		// Unix's rename(2) never does. That's exactly what RF-47's
-		// rename-current-to-.old-first pattern (a separate, dedicated PR)
-		// exists to work around; Replace() doesn't do that yet.
-		t.Skip("Windows needs the rename-and-replace pattern (RF-47, not implemented yet)")
-	}
 
 	self, err := os.Executable()
 	if err != nil {
@@ -76,6 +67,15 @@ func TestSelfUpdater_Replace_ReplacesRunningExecutable(t *testing.T) {
 	if info.Mode().Perm()&0o100 == 0 {
 		t.Fatalf("expected the replaced file to remain executable, got mode %v", info.Mode())
 	}
+
+	if runtime.GOOS == "windows" {
+		// RF-47: the original binary should have been renamed aside
+		// rather than deleted, since CleanupOldBinary is what removes it
+		// (normally at the next startup, once nothing has it open).
+		if _, err := os.Stat(copyPath + ".old"); err != nil {
+			t.Fatalf("expected %s.old to remain for later cleanup: %v", copyPath, err)
+		}
+	}
 }
 
 const selfUpdaterTestMarker = "GIT_RODOLFO_SELFUPDATER_TEST_MARKER"
@@ -88,4 +88,26 @@ func runSelfUpdaterHelper() {
 		os.Exit(1)
 	}
 	os.Exit(0)
+}
+
+// cleanupOldBinary takes the executable path as a parameter (see
+// self_updater.go), so — unlike Replace — it's directly testable without
+// the os.Executable()-dependent subprocess dance.
+func TestCleanupOldBinary(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "git-rodolfo.exe")
+
+	if err := cleanupOldBinary(exe); err != nil {
+		t.Fatalf("cleanupOldBinary with nothing to clean up: %v", err)
+	}
+
+	if err := os.WriteFile(exe+".old", []byte("stale"), 0o755); err != nil {
+		t.Fatalf("write stale .old: %v", err)
+	}
+	if err := cleanupOldBinary(exe); err != nil {
+		t.Fatalf("cleanupOldBinary: %v", err)
+	}
+	if _, err := os.Stat(exe + ".old"); !os.IsNotExist(err) {
+		t.Fatalf("expected %s.old to be removed, stat err = %v", exe, err)
+	}
 }

@@ -41,6 +41,13 @@ func main() {
 	provider := infra.NewGitHubCLIAdapter()
 	mechanism := app.NewSSHCommandMechanism()
 	newGitClient := func(dir string) app.GitClient { return infra.NewGitClient(dir) }
+	selfUpdater := infra.NewSelfUpdater()
+
+	// Best effort: a ".old" left by a previous Windows update (RF-47) is
+	// harmless clutter, not something worth failing startup over.
+	if err := selfUpdater.CleanupOldBinary(); err != nil {
+		fmt.Fprintf(os.Stderr, "git-rodolfo: warning: %v\n", err)
+	}
 
 	releaseRepo := os.Getenv("GIT_RODOLFO_REPO")
 	if releaseRepo == "" {
@@ -62,7 +69,7 @@ func main() {
 		SSH:             sshClient,
 		Agent:           agent,
 		Provider:        provider,
-		SelfUpdater:     infra.NewSelfUpdater(),
+		SelfUpdater:     selfUpdater,
 		AccountRepo:     repo,
 		Mechanism:       mechanism,
 		NewGitClient:    newGitClient,
