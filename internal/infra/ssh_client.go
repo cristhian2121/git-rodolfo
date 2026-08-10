@@ -166,8 +166,14 @@ func windowsKeyPermissionIssue(path string) (cause, fixCommand string, err error
 	out := stdout.String()
 	for _, identity := range windowsBroadIdentities {
 		if strings.Contains(out, identity) {
+			// /grant:r only replaces the named user's own explicit grant —
+			// it leaves any other principal's explicit ACE (like the
+			// broad one just detected) untouched. /reset first clears
+			// every explicit ACE (back to just what's inherited), so the
+			// following /inheritance:r /grant:r ends up with exactly one:
+			// the current user, full control.
 			return fmt.Sprintf("permissions are too open: %q has explicit access", identity),
-				fmt.Sprintf(`icacls "%s" /inheritance:r /grant:r "%%USERNAME%%":F`, path), nil
+				fmt.Sprintf(`icacls "%s" /reset && icacls "%s" /inheritance:r /grant:r "%%USERNAME%%":F`, path, path), nil
 		}
 	}
 	return "", "", nil

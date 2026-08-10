@@ -152,6 +152,14 @@ func TestSSHClient_KeyPermissionIssue_Windows(t *testing.T) {
 		t.Fatal("expected a key readable by Everyone to be flagged")
 	}
 
+	// Mirrors the two-command fixCommand KeyPermissionIssue itself
+	// suggests: /reset clears every explicit ACE (including the Everyone
+	// grant just added — /grant:r alone only replaces the named user's
+	// own explicit entry, not other principals'), then /inheritance:r
+	// /grant:r leaves exactly one: the current user, full control.
+	if out, err := exec.Command("icacls", path, "/reset").CombinedOutput(); err != nil {
+		t.Fatalf("icacls reset: %v: %s", err, out)
+	}
 	user := os.Getenv("USERNAME")
 	if out, err := exec.Command("icacls", path, "/inheritance:r", "/grant:r", user+":F").CombinedOutput(); err != nil {
 		t.Fatalf("icacls fix: %v: %s", err, out)
