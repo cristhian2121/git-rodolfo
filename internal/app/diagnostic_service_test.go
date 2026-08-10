@@ -95,7 +95,7 @@ func TestDiagnosticService_MissingKey(t *testing.T) {
 func TestDiagnosticService_InsecurePermissions(t *testing.T) {
 	accounts := fakes.NewFakeAccountRepository(domain.Account{ID: "lean-tech", DisplayName: "Lean Tech", PrivateKeyPath: "/k"})
 	ssh := fakes.NewFakeSSHClient()
-	ssh.Keys["/k"] = fakes.FakeKey{Valid: true, Permissions: 0o644}
+	ssh.Keys["/k"] = fakes.FakeKey{Valid: true, PermissionCause: "permissions are too open (0644); private keys should be 600", PermissionFix: "chmod 600 /k"}
 	svc := app.NewDiagnosticService(accounts, ssh, fakes.NewFakeEnvironmentInspector(), nil, nil)
 
 	findings, err := svc.Run()

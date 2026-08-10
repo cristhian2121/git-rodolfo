@@ -122,23 +122,81 @@ func (c *SSHClient) PublicKeyContent(path string) (string, error) {
 	return strings.TrimSpace(stdout.String()), nil
 }
 
-// KeyFilePermissions returns path's file mode bits (§13.10 #3).
-func (c *SSHClient) KeyFilePermissions(path string) (os.FileMode, error) {
+// KeyPermissionIssue reports whether path's private key permissions are
+// unsafe (§13.10 #3, PRD 2 RF-46). cause=="" means secure; otherwise cause
+// describes the problem and fixCommand is the exact command that fixes
+// it. Windows has no POSIX mode bits — os.Stat synthesizes a meaningless
+// ~0666 for any writable file there — so it's checked via ACLs (icacls)
+// instead.
+func (c *SSHClient) KeyPermissionIssue(path string) (cause, fixCommand string, err error) {
+	if runtime.GOOS == "windows" {
+		return windowsKeyPermissionIssue(path)
+	}
 	info, err := os.Stat(path)
 	if err != nil {
-		return 0, fmt.Errorf("stat %s: %w", path, err)
+		return "", "", fmt.Errorf("stat %s: %w", path, err)
 	}
-	if runtime.GOOS == "windows" {
-		// os.Stat's mode bits are synthetic on Windows (~0666 for any
-		// writable file, regardless of real ACL security), so treating
-		// them as POSIX permission bits would flag every key as "too
-		// open" with a "chmod 600" fix that doesn't even exist there. An
-		// ACL-aware replacement for this whole method lands in a
-		// follow-up PR (RF-46); until then, report the secure value so
-		// "doctor" doesn't misfire on something it can't check yet.
-		return 0o600, nil
+	perm := info.Mode().Perm()
+	if perm&0o077 != 0 {
+		return fmt.Sprintf("permissions are too open (%04o); private keys should be 600", perm),
+			fmt.Sprintf("chmod 600 %s", path), nil
 	}
-	return info.Mode().Perm(), nil
+	return "", "", nil
+}
+
+// windowsBroadIdentities are well-known Windows groups that, if granted
+// access to a private key, make it readable by more than just its owner —
+// the ACL equivalent of a POSIX group/other bit being set.
+//
+// Known limitation: these are the English display names icacls uses;
+// this check doesn't attempt to handle other Windows UI languages, or
+// broad access granted through a differently-named group (e.g. a
+// corporate AD group).
+var windowsBroadIdentities = []string{"Everyone", `BUILTIN\Users`, "Authenticated Users"}
+
+func windowsKeyPermissionIssue(path string) (cause, fixCommand string, err error) {
+	var stdout, stderr bytes.Buffer
+	cmd := exec.Command("icacls", path)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if runErr := cmd.Run(); runErr != nil {
+		// icacls writes some failures to stdout rather than stderr.
+		msg := firstLine(stderr.String())
+		if msg == "" {
+			msg = firstLine(stdout.String())
+		}
+		return "", "", fmt.Errorf("icacls %s: %s", path, msg)
+	}
+
+	for _, line := range strings.Split(stdout.String(), "\n") {
+		// "(I)" marks an inherited ACE — not something specific to this
+		// key, so not this check's business — and "(DENY)" is a
+		// hardening measure, not a grant; neither counts as "too open".
+		if strings.Contains(line, "(I)") || strings.Contains(line, "(DENY)") {
+			continue
+		}
+		for _, identity := range windowsBroadIdentities {
+			if strings.Contains(line, identity) {
+				// icacls rejects /reset and /inheritance:r combined in
+				// one invocation ("Invalid parameter"), so this is two
+				// commands — newline-separated rather than joined with
+				// "&&", since no chaining operator works pasted into both
+				// cmd.exe and PowerShell (the Windows default, which
+				// doesn't support "&&" pre-7 and never expands %VAR%
+				// anyway — the username is resolved here instead).
+				// /reset clears every explicit ACE first (including
+				// whichever broad grant was just detected — /grant:r
+				// alone only replaces the *named* trustee's own entry,
+				// leaving others untouched), then /inheritance:r drops
+				// the now-inherited entries and /grant:r leaves the
+				// current user with sole access.
+				user := os.Getenv("USERNAME")
+				return fmt.Sprintf("permissions are too open: %q has explicit access", identity),
+					fmt.Sprintf("icacls \"%s\" /reset\nicacls \"%s\" /inheritance:r /grant:r \"%s\":F", path, path, user), nil
+			}
+		}
+	}
+	return "", "", nil
 }
 
 // ScanKeys lists usable private keys in dir (RF-40, RF-42): every file

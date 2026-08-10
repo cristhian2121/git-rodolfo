@@ -107,12 +107,19 @@ func (s *DiagnosticService) checkKeys(accounts []domain.Account) []DiagnosticFin
 			})
 			continue
 		}
-		perm, err := s.ssh.KeyFilePermissions(a.PrivateKeyPath)
-		if err == nil && perm&0o077 != 0 {
+		cause, fix, err := s.ssh.KeyPermissionIssue(a.PrivateKeyPath)
+		if err != nil {
 			findings = append(findings, DiagnosticFinding{
 				Message: fmt.Sprintf("%s key found (%s)", a.DisplayName, a.PrivateKeyPath),
-				Causes:  []string{fmt.Sprintf("permissions are too open (%04o); private keys should be 600", perm)},
-				Command: fmt.Sprintf("chmod 600 %s", a.PrivateKeyPath),
+				Causes:  []string{fmt.Sprintf("could not verify permissions: %v", err)},
+			})
+			continue
+		}
+		if cause != "" {
+			findings = append(findings, DiagnosticFinding{
+				Message: fmt.Sprintf("%s key found (%s)", a.DisplayName, a.PrivateKeyPath),
+				Causes:  []string{cause},
+				Command: fix,
 			})
 			continue
 		}

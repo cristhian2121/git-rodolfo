@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -11,6 +12,17 @@ func requireSSHAgentTools(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("ssh-add"); err != nil {
 		t.Skip("ssh-add not found on PATH")
+	}
+}
+
+// requireWindows skips tests that only make sense on a real Windows
+// machine (e.g. exercising icacls-based ACL checks) — mirrors
+// requireSSHAgentTools/requireSSHTools's runtime-skip style rather than a
+// //go:build tag, consistent with the rest of this codebase.
+func requireWindows(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		t.Skip("this test only runs on Windows")
 	}
 }
 

@@ -2,7 +2,6 @@ package fakes
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/lean-tech/git-rodolfo/internal/app"
 	"github.com/lean-tech/git-rodolfo/internal/domain"
@@ -37,8 +36,10 @@ type FakeKey struct {
 	// PublicKeyContent stands in for the real public key line; if empty,
 	// PublicKeyContent() synthesizes one from the path.
 	PublicKeyContent string
-	// Permissions defaults to 0o600 (secure) when zero.
-	Permissions os.FileMode
+	// PermissionCause/PermissionFix stand in for KeyPermissionIssue's
+	// result; both empty means secure.
+	PermissionCause string
+	PermissionFix   string
 }
 
 // GeneratedKey records a single GenerateKey invocation for assertions.
@@ -107,15 +108,12 @@ func (f *FakeSSHClient) PublicKeyContent(path string) (string, error) {
 	return "ssh-ed25519 FAKEKEY " + path, nil
 }
 
-func (f *FakeSSHClient) KeyFilePermissions(path string) (os.FileMode, error) {
+func (f *FakeSSHClient) KeyPermissionIssue(path string) (string, string, error) {
 	key, ok := f.Keys[path]
 	if !ok {
-		return 0, fmt.Errorf("unknown key: %s", path)
+		return "", "", fmt.Errorf("unknown key: %s", path)
 	}
-	if key.Permissions == 0 {
-		return 0o600, nil
-	}
-	return key.Permissions, nil
+	return key.PermissionCause, key.PermissionFix, nil
 }
 
 func (f *FakeSSHClient) ScanKeys(dir string) ([]domain.SSHKeyCandidate, error) {

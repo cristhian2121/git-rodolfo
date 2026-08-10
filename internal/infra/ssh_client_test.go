@@ -2,6 +2,7 @@ package infra
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,14 +82,10 @@ func TestSSHClient_PublicKeyContent_DerivesWithoutPubFile(t *testing.T) {
 	}
 }
 
-func TestSSHClient_KeyFilePermissions(t *testing.T) {
+func TestSSHClient_KeyPermissionIssue_Unix(t *testing.T) {
 	requireSSHTools(t)
 	if runtime.GOOS == "windows" {
-		// os.Stat's mode bits are synthetic on Windows (always ~0666 for a
-		// writable file) — they don't reflect real ACL security at all.
-		// KeyFilePermissions gets replaced with an ACL-aware equivalent in
-		// PR2 (RF-46); nothing meaningful to assert here until then.
-		t.Skip("POSIX permission bits are not meaningful on Windows")
+		t.Skip("POSIX permission bits are not meaningful on Windows; see TestSSHClient_KeyPermissionIssue_Windows")
 	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "id_test")
@@ -97,24 +94,86 @@ func TestSSHClient_KeyFilePermissions(t *testing.T) {
 	if err := c.GenerateKey(path, "test@example.com", false, false); err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	perm, err := c.KeyFilePermissions(path)
-	if err != nil {
-		t.Fatalf("KeyFilePermissions: %v", err)
-	}
 	// ssh-keygen creates private keys with 600 by default.
-	if perm&0o077 != 0 {
-		t.Fatalf("expected a freshly generated key to have secure permissions, got %04o", perm)
+	cause, _, err := c.KeyPermissionIssue(path)
+	if err != nil {
+		t.Fatalf("KeyPermissionIssue: %v", err)
+	}
+	if cause != "" {
+		t.Fatalf("expected a freshly generated key to have secure permissions, got cause %q", cause)
 	}
 
 	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
-	perm, err = c.KeyFilePermissions(path)
+	cause, fix, err := c.KeyPermissionIssue(path)
 	if err != nil {
-		t.Fatalf("KeyFilePermissions: %v", err)
+		t.Fatalf("KeyPermissionIssue: %v", err)
 	}
-	if perm != 0o644 {
-		t.Fatalf("got %04o, want 0644", perm)
+	if !strings.Contains(cause, "0644") {
+		t.Fatalf("expected cause to report the actual mode 0644, got %q", cause)
+	}
+	if want := fmt.Sprintf("chmod 600 %s", path); fix != want {
+		t.Fatalf("got fix %q, want %q", fix, want)
+	}
+}
+
+// TestSSHClient_KeyPermissionIssue_Windows only runs for real on a
+// windows-latest CI runner (requireWindows skips elsewhere): it exercises
+// the actual icacls-based check (RF-46) end to end — a freshly generated
+// key is secure, widening its ACL to Everyone gets flagged, and applying
+// KeyPermissionIssue's own suggested fix resolves it.
+func TestSSHClient_KeyPermissionIssue_Windows(t *testing.T) {
+	requireWindows(t)
+	requireSSHTools(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "id_test")
+	c := NewSSHClient()
+
+	if err := c.GenerateKey(path, "test@example.com", false, false); err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	cause, _, err := c.KeyPermissionIssue(path)
+	if err != nil {
+		t.Fatalf("KeyPermissionIssue: %v", err)
+	}
+	if cause != "" {
+		t.Fatalf("expected a freshly generated key to have secure ACLs, got cause %q", cause)
+	}
+
+	if out, err := exec.Command("icacls", path, "/grant", "Everyone:R").CombinedOutput(); err != nil {
+		t.Fatalf("icacls grant: %v: %s", err, out)
+	}
+	cause, fix, err := c.KeyPermissionIssue(path)
+	if err != nil {
+		t.Fatalf("KeyPermissionIssue: %v", err)
+	}
+	if cause == "" {
+		t.Fatal("expected a key readable by Everyone to be flagged")
+	}
+	user := os.Getenv("USERNAME")
+	if !strings.Contains(fix, "/reset") || !strings.Contains(fix, "/inheritance:r") || !strings.Contains(fix, user+`":F`) {
+		t.Fatalf("suggested fix looks wrong: %q", fix)
+	}
+
+	// Apply the equivalent icacls operations directly (args as a slice,
+	// not by handing the human-readable, already-quoted fixCommand string
+	// to cmd.exe /C) — Go's exec.Command re-quotes string arguments for
+	// Windows, which mangles a string that already contains its own
+	// quotes; that's a test-harness wrinkle, not something a person
+	// pasting the printed fix into a real terminal ever hits.
+	if out, err := exec.Command("icacls", path, "/reset").CombinedOutput(); err != nil {
+		t.Fatalf("icacls reset: %v: %s", err, out)
+	}
+	if out, err := exec.Command("icacls", path, "/inheritance:r", "/grant:r", user+":F").CombinedOutput(); err != nil {
+		t.Fatalf("icacls fix: %v: %s", err, out)
+	}
+	cause, _, err = c.KeyPermissionIssue(path)
+	if err != nil {
+		t.Fatalf("KeyPermissionIssue: %v", err)
+	}
+	if cause != "" {
+		t.Fatalf("expected the fix to resolve the issue, still got cause %q", cause)
 	}
 }
 

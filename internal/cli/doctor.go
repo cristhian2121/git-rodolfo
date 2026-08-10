@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/lean-tech/git-rodolfo/internal/app"
 )
@@ -72,7 +73,19 @@ func runDoctor(deps Deps, args []string) int {
 			}
 		}
 		if f.Command != "" {
-			fmt.Fprintf(deps.Stdout, "Run: %s\n", f.Command)
+			// Windows' ACL fix (RF-46) needs two separate icacls
+			// invocations — there's no single chaining operator that
+			// works pasted into both cmd.exe and PowerShell — so Command
+			// can be multi-line; render each line as its own command
+			// instead of assuming it's always a one-liner.
+			if strings.Contains(f.Command, "\n") {
+				fmt.Fprintln(deps.Stdout, "Run:")
+				for _, line := range strings.Split(f.Command, "\n") {
+					fmt.Fprintf(deps.Stdout, "  %s\n", line)
+				}
+			} else {
+				fmt.Fprintf(deps.Stdout, "Run: %s\n", f.Command)
+			}
 		}
 	}
 	return 1
