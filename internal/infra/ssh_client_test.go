@@ -152,12 +152,14 @@ func TestSSHClient_KeyPermissionIssue_Windows(t *testing.T) {
 		t.Fatal("expected a key readable by Everyone to be flagged")
 	}
 
-	// Run the actual suggested fixCommand (through cmd.exe, since it's a
-	// single already-quoted command line) rather than a hand-duplicated
-	// icacls invocation — that would drift from what KeyPermissionIssue
-	// really returns instead of verifying it.
-	if out, err := exec.Command("cmd", "/C", fix).CombinedOutput(); err != nil {
-		t.Fatalf("running suggested fix %q: %v: %s", fix, err, out)
+	// Run the actual suggested fixCommand line by line (through cmd.exe,
+	// since each line is already a valid, quoted command on its own)
+	// rather than a hand-duplicated icacls invocation — that would drift
+	// from what KeyPermissionIssue really returns instead of verifying it.
+	for _, line := range strings.Split(fix, "\n") {
+		if out, err := exec.Command("cmd", "/C", line).CombinedOutput(); err != nil {
+			t.Fatalf("running suggested fix line %q: %v: %s", line, err, out)
+		}
 	}
 	cause, _, err = c.KeyPermissionIssue(path)
 	if err != nil {

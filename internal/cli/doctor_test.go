@@ -85,6 +85,33 @@ func TestRun_Doctor_ReportsIssuesAndExitsNonZero(t *testing.T) {
 	}
 }
 
+// TestRun_Doctor_RendersMultiLineCommand covers RF-46's Windows fix,
+// which is two icacls invocations (no single operator chains them
+// correctly in both cmd.exe and PowerShell) — doctor must print each line
+// as its own command instead of squashing them onto one "Run:" line.
+func TestRun_Doctor_RendersMultiLineCommand(t *testing.T) {
+	accounts := fakes.NewFakeAccountRepository(domain.Account{
+		ID: "lean-tech", DisplayName: "Lean Tech", ProviderUsername: "cristhiandelgado-work", PrivateKeyPath: "/k",
+	})
+	ssh := fakes.NewFakeSSHClient()
+	ssh.Keys["/k"] = fakes.FakeKey{
+		Valid:           true,
+		AuthResult:      domain.AuthResult{Success: true, Username: "cristhiandelgado-work"},
+		PermissionCause: `permissions are too open: "Everyone" has explicit access`,
+		PermissionFix:   "icacls \"/k\" /reset\nicacls \"/k\" /inheritance:r /grant:r \"user\":F",
+	}
+	deps, stdout, _ := doctorDeps(t, accounts, ssh, fakes.NewFakeEnvironmentInspector(), nil)
+
+	code := cli.Run([]string{"doctor"}, deps)
+
+	if code != 1 {
+		t.Fatalf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stdout.String(), "Run:\n  icacls \"/k\" /reset\n  icacls \"/k\" /inheritance:r /grant:r \"user\":F\n") {
+		t.Fatalf("expected each command on its own line: %s", stdout.String())
+	}
+}
+
 func TestRun_Doctor_TakesNoArguments(t *testing.T) {
 	deps, _, stderr := doctorDeps(t, fakes.NewFakeAccountRepository(), fakes.NewFakeSSHClient(), fakes.NewFakeEnvironmentInspector(), nil)
 

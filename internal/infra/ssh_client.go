@@ -177,18 +177,22 @@ func windowsKeyPermissionIssue(path string) (cause, fixCommand string, err error
 		}
 		for _, identity := range windowsBroadIdentities {
 			if strings.Contains(line, identity) {
-				// One icacls call, not several chained with "&&": /reset
-				// clears every explicit ACE first (including whichever
-				// broad grant was just detected — /grant:r alone only
-				// replaces the *named* trustee's own entry, leaving
-				// others untouched), /inheritance:r drops what inheriting
-				// then re-adds, and /grant:r leaves the current user with
-				// sole access. %USERNAME% is resolved here rather than
-				// left for the shell to expand, since PowerShell (the
-				// Windows default) doesn't do %VAR% expansion at all.
+				// icacls rejects /reset and /inheritance:r combined in
+				// one invocation ("Invalid parameter"), so this is two
+				// commands — newline-separated rather than joined with
+				// "&&", since no chaining operator works pasted into both
+				// cmd.exe and PowerShell (the Windows default, which
+				// doesn't support "&&" pre-7 and never expands %VAR%
+				// anyway — the username is resolved here instead).
+				// /reset clears every explicit ACE first (including
+				// whichever broad grant was just detected — /grant:r
+				// alone only replaces the *named* trustee's own entry,
+				// leaving others untouched), then /inheritance:r drops
+				// the now-inherited entries and /grant:r leaves the
+				// current user with sole access.
 				user := os.Getenv("USERNAME")
 				return fmt.Sprintf("permissions are too open: %q has explicit access", identity),
-					fmt.Sprintf(`icacls "%s" /reset /inheritance:r /grant:r "%s":F`, path, user), nil
+					fmt.Sprintf("icacls \"%s\" /reset\nicacls \"%s\" /inheritance:r /grant:r \"%s\":F", path, path, user), nil
 			}
 		}
 	}
