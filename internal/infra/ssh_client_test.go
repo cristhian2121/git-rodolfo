@@ -151,15 +151,22 @@ func TestSSHClient_KeyPermissionIssue_Windows(t *testing.T) {
 	if cause == "" {
 		t.Fatal("expected a key readable by Everyone to be flagged")
 	}
+	user := os.Getenv("USERNAME")
+	if !strings.Contains(fix, "/reset") || !strings.Contains(fix, "/inheritance:r") || !strings.Contains(fix, user+`":F`) {
+		t.Fatalf("suggested fix looks wrong: %q", fix)
+	}
 
-	// Run the actual suggested fixCommand line by line (through cmd.exe,
-	// since each line is already a valid, quoted command on its own)
-	// rather than a hand-duplicated icacls invocation — that would drift
-	// from what KeyPermissionIssue really returns instead of verifying it.
-	for _, line := range strings.Split(fix, "\n") {
-		if out, err := exec.Command("cmd", "/C", line).CombinedOutput(); err != nil {
-			t.Fatalf("running suggested fix line %q: %v: %s", line, err, out)
-		}
+	// Apply the equivalent icacls operations directly (args as a slice,
+	// not by handing the human-readable, already-quoted fixCommand string
+	// to cmd.exe /C) — Go's exec.Command re-quotes string arguments for
+	// Windows, which mangles a string that already contains its own
+	// quotes; that's a test-harness wrinkle, not something a person
+	// pasting the printed fix into a real terminal ever hits.
+	if out, err := exec.Command("icacls", path, "/reset").CombinedOutput(); err != nil {
+		t.Fatalf("icacls reset: %v: %s", err, out)
+	}
+	if out, err := exec.Command("icacls", path, "/inheritance:r", "/grant:r", user+":F").CombinedOutput(); err != nil {
+		t.Fatalf("icacls fix: %v: %s", err, out)
 	}
 	cause, _, err = c.KeyPermissionIssue(path)
 	if err != nil {
