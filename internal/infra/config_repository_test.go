@@ -153,6 +153,30 @@ func TestConfigRepository_SaveListFindUpdateDelete(t *testing.T) {
 	}
 }
 
+// TestConfigRepository_FindByID_IsCaseInsensitive covers a real bug: IDs
+// are always lowercase (Slugify-derived), but a user typing "account show
+// LeanTech" instead of "lean-tech" should still find it, not get a
+// confusing "not found" over letter case alone.
+func TestConfigRepository_FindByID_IsCaseInsensitive(t *testing.T) {
+	dir := t.TempDir()
+	repo := NewConfigRepository(filepath.Join(dir, "config.json"))
+
+	acc := newTestAccount("lean-tech")
+	if err := repo.Save(acc); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	for _, id := range []string{"lean-tech", "LEAN-TECH", "Lean-Tech", "LeAn-TeCh"} {
+		found, err := repo.FindByID(id)
+		if err != nil || found == nil {
+			t.Fatalf("FindByID(%q): %v, %v", id, found, err)
+		}
+		if found.ID != "lean-tech" {
+			t.Fatalf("FindByID(%q) returned %+v", id, found)
+		}
+	}
+}
+
 // TestConfigRepository_ConcurrentSavesDoNotRace is the RNF-06 test: many
 // concurrent writers, each adding a distinct account, must all succeed
 // without losing updates or corrupting the file — the file lock in

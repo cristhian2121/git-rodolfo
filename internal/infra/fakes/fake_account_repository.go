@@ -2,6 +2,7 @@ package fakes
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/lean-tech/git-rodolfo/internal/domain"
 )
@@ -21,9 +22,12 @@ func (f *FakeAccountRepository) List() ([]domain.Account, error) {
 	return f.Accounts, nil
 }
 
+// FindByID matches case-insensitively, mirroring ConfigRepository — a
+// user typing an account id with different letter casing than its
+// (always-lowercase, Slugify-derived) stored form should still find it.
 func (f *FakeAccountRepository) FindByID(id string) (*domain.Account, error) {
 	for i := range f.Accounts {
-		if f.Accounts[i].ID == id {
+		if strings.EqualFold(f.Accounts[i].ID, id) {
 			found := f.Accounts[i]
 			return &found, nil
 		}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/lean-tech/git-rodolfo/internal/domain"
 	"github.com/lean-tech/git-rodolfo/internal/infra/atomicfile"
@@ -126,14 +127,17 @@ func (r *ConfigRepository) List() ([]domain.Account, error) {
 
 // FindByID returns the account with the given ID, or (nil, nil) if none
 // matches — "not found" is not an error condition for this method; callers
-// decide how to report it to the user.
+// decide how to report it to the user. The match is case-insensitive:
+// Slugify always derives a lowercase ID, but a user typing "account show
+// LeanTech" instead of "lean-tech" should still find it rather than
+// getting a confusing "not found" over letter case alone.
 func (r *ConfigRepository) FindByID(id string) (*domain.Account, error) {
 	cfg, err := r.read()
 	if err != nil {
 		return nil, err
 	}
 	for i := range cfg.Accounts {
-		if cfg.Accounts[i].ID == id {
+		if strings.EqualFold(cfg.Accounts[i].ID, id) {
 			found := cfg.Accounts[i]
 			return &found, nil
 		}
