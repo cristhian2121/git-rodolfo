@@ -145,13 +145,13 @@ func (c *SSHClient) KeyPermissionIssue(path string) (cause, fixCommand string, e
 }
 
 // windowsBroadIdentities are well-known Windows groups that, if granted
-// any explicit access to a private key, make it readable by more than
-// just its owner — the ACL equivalent of a POSIX group/other bit being
-// set. Matched by name only (not permission flags): any explicit ACE for
-// one of these is already "too open" regardless of what it grants.
+// access to a private key, make it readable by more than just its owner —
+// the ACL equivalent of a POSIX group/other bit being set.
 //
 // Known limitation: these are the English display names icacls uses;
-// this check doesn't attempt to handle other Windows UI languages.
+// this check doesn't attempt to handle other Windows UI languages, or
+// broad access granted through a differently-named group (e.g. a
+// corporate AD group).
 var windowsBroadIdentities = []string{"Everyone", `BUILTIN\Users`, "Authenticated Users"}
 
 func windowsKeyPermissionIssue(path string) (cause, fixCommand string, err error) {
@@ -160,20 +160,35 @@ func windowsKeyPermissionIssue(path string) (cause, fixCommand string, err error
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if runErr := cmd.Run(); runErr != nil {
-		return "", "", fmt.Errorf("icacls %s: %s", path, firstLine(stderr.String()))
+		// icacls writes some failures to stdout rather than stderr.
+		msg := firstLine(stderr.String())
+		if msg == "" {
+			msg = firstLine(stdout.String())
+		}
+		return "", "", fmt.Errorf("icacls %s: %s", path, msg)
 	}
 
-	out := stdout.String()
-	for _, identity := range windowsBroadIdentities {
-		if strings.Contains(out, identity) {
-			// /grant:r only replaces the named user's own explicit grant —
-			// it leaves any other principal's explicit ACE (like the
-			// broad one just detected) untouched. /reset first clears
-			// every explicit ACE (back to just what's inherited), so the
-			// following /inheritance:r /grant:r ends up with exactly one:
-			// the current user, full control.
-			return fmt.Sprintf("permissions are too open: %q has explicit access", identity),
-				fmt.Sprintf(`icacls "%s" /reset && icacls "%s" /inheritance:r /grant:r "%%USERNAME%%":F`, path, path), nil
+	for _, line := range strings.Split(stdout.String(), "\n") {
+		// "(I)" marks an inherited ACE — not something specific to this
+		// key, so not this check's business — and "(DENY)" is a
+		// hardening measure, not a grant; neither counts as "too open".
+		if strings.Contains(line, "(I)") || strings.Contains(line, "(DENY)") {
+			continue
+		}
+		for _, identity := range windowsBroadIdentities {
+			if strings.Contains(line, identity) {
+				// One icacls call, not two: /inheritance:r strips
+				// inherited entries, /remove:g drops any explicit grant
+				// for the broad identities themselves (/grant:r alone
+				// only replaces the *named* trustee's own entry, leaving
+				// others like this one untouched), and /grant:r leaves
+				// the current user with sole access. No "&&"/"%VAR%"
+				// shell syntax, so it works pasted into cmd.exe or
+				// PowerShell alike.
+				user := os.Getenv("USERNAME")
+				return fmt.Sprintf("permissions are too open: %q has explicit access", identity),
+					fmt.Sprintf(`icacls "%s" /inheritance:r /remove:g "Everyone" "BUILTIN\Users" "Authenticated Users" /grant:r "%s":F`, path, user), nil
+			}
 		}
 	}
 	return "", "", nil

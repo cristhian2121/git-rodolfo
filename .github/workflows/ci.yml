@@ -27,8 +27,12 @@ jobs:
       - name: Start Windows OpenSSH agent
         if: runner.os == 'Windows'
         run: |
+          $ErrorActionPreference = 'Stop'
           Set-Service ssh-agent -StartupType Manual
           Start-Service ssh-agent
+          if ((Get-Service ssh-agent).Status -ne 'Running') {
+            throw "ssh-agent service did not start"
+          }
 
       - run: make test
 

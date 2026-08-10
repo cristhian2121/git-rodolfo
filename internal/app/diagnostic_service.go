@@ -108,7 +108,14 @@ func (s *DiagnosticService) checkKeys(accounts []domain.Account) []DiagnosticFin
 			continue
 		}
 		cause, fix, err := s.ssh.KeyPermissionIssue(a.PrivateKeyPath)
-		if err == nil && cause != "" {
+		if err != nil {
+			findings = append(findings, DiagnosticFinding{
+				Message: fmt.Sprintf("%s key found (%s)", a.DisplayName, a.PrivateKeyPath),
+				Causes:  []string{fmt.Sprintf("could not verify permissions: %v", err)},
+			})
+			continue
+		}
+		if cause != "" {
 			findings = append(findings, DiagnosticFinding{
 				Message: fmt.Sprintf("%s key found (%s)", a.DisplayName, a.PrivateKeyPath),
 				Causes:  []string{cause},

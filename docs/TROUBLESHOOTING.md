@@ -34,6 +34,11 @@ Private keys need to be readable only by you. Fix directly:
 ```bash
 chmod 600 ~/.ssh/id_ed25519_<name>
 ```
+On Windows, permissions are ACL-based rather than POSIX mode bits —
+`doctor` detects an overly broad ACL (e.g. `Everyone` or `Authenticated
+Users` granted access) and prints the exact `icacls` command to restrict
+the key to your own account instead.
+
 `doctor` reports this but doesn't fix it (RF-22's `doctor --fix` is
 explicitly out of MVP scope — see PRD §26).
 

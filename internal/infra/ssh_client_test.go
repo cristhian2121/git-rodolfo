@@ -110,8 +110,8 @@ func TestSSHClient_KeyPermissionIssue_Unix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("KeyPermissionIssue: %v", err)
 	}
-	if cause == "" {
-		t.Fatal("expected 0644 permissions to be flagged")
+	if !strings.Contains(cause, "0644") {
+		t.Fatalf("expected cause to report the actual mode 0644, got %q", cause)
 	}
 	if want := fmt.Sprintf("chmod 600 %s", path); fix != want {
 		t.Fatalf("got fix %q, want %q", fix, want)
@@ -144,7 +144,7 @@ func TestSSHClient_KeyPermissionIssue_Windows(t *testing.T) {
 	if out, err := exec.Command("icacls", path, "/grant", "Everyone:R").CombinedOutput(); err != nil {
 		t.Fatalf("icacls grant: %v: %s", err, out)
 	}
-	cause, _, err = c.KeyPermissionIssue(path)
+	cause, fix, err := c.KeyPermissionIssue(path)
 	if err != nil {
 		t.Fatalf("KeyPermissionIssue: %v", err)
 	}
@@ -152,17 +152,12 @@ func TestSSHClient_KeyPermissionIssue_Windows(t *testing.T) {
 		t.Fatal("expected a key readable by Everyone to be flagged")
 	}
 
-	// Mirrors the two-command fixCommand KeyPermissionIssue itself
-	// suggests: /reset clears every explicit ACE (including the Everyone
-	// grant just added — /grant:r alone only replaces the named user's
-	// own explicit entry, not other principals'), then /inheritance:r
-	// /grant:r leaves exactly one: the current user, full control.
-	if out, err := exec.Command("icacls", path, "/reset").CombinedOutput(); err != nil {
-		t.Fatalf("icacls reset: %v: %s", err, out)
-	}
-	user := os.Getenv("USERNAME")
-	if out, err := exec.Command("icacls", path, "/inheritance:r", "/grant:r", user+":F").CombinedOutput(); err != nil {
-		t.Fatalf("icacls fix: %v: %s", err, out)
+	// Run the actual suggested fixCommand (through cmd.exe, since it's a
+	// single already-quoted command line) rather than a hand-duplicated
+	// icacls invocation — that would drift from what KeyPermissionIssue
+	// really returns instead of verifying it.
+	if out, err := exec.Command("cmd", "/C", fix).CombinedOutput(); err != nil {
+		t.Fatalf("running suggested fix %q: %v: %s", fix, err, out)
 	}
 	cause, _, err = c.KeyPermissionIssue(path)
 	if err != nil {
