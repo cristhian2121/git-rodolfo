@@ -169,14 +169,21 @@ func windowsKeyPermissionIssue(path string) (cause, fixCommand string, err error
 	}
 
 	for _, line := range strings.Split(stdout.String(), "\n") {
-		// "(I)" marks an inherited ACE — not something specific to this
-		// key, so not this check's business — and "(DENY)" is a
-		// hardening measure, not a grant; neither counts as "too open".
-		if strings.Contains(line, "(I)") || strings.Contains(line, "(DENY)") {
+		// "(DENY)" is a hardening measure, not a grant, so it doesn't
+		// count as "too open". An "(I)" (inherited) ACE is deliberately
+		// NOT excluded here: a key that's readable by Everyone because
+		// its directory's ACL granted that is exactly as exposed as one
+		// with the same grant set directly on the file — inherited vs.
+		// explicit changes nothing about who can actually read it.
+		if strings.Contains(line, "(DENY)") {
 			continue
 		}
 		for _, identity := range windowsBroadIdentities {
 			if strings.Contains(line, identity) {
+				user := os.Getenv("USERNAME")
+				if user == "" {
+					return "", "", fmt.Errorf("permissions are too open (%q has access) but $USERNAME is empty, so no fix command could be built", identity)
+				}
 				// icacls rejects /reset and /inheritance:r combined in
 				// one invocation ("Invalid parameter"), so this is two
 				// commands — newline-separated rather than joined with
@@ -190,8 +197,7 @@ func windowsKeyPermissionIssue(path string) (cause, fixCommand string, err error
 				// leaving others untouched), then /inheritance:r drops
 				// the now-inherited entries and /grant:r leaves the
 				// current user with sole access.
-				user := os.Getenv("USERNAME")
-				return fmt.Sprintf("permissions are too open: %q has explicit access", identity),
+				return fmt.Sprintf("permissions are too open: %q has access", identity),
 					fmt.Sprintf("icacls \"%s\" /reset\nicacls \"%s\" /inheritance:r /grant:r \"%s\":F", path, path, user), nil
 			}
 		}
