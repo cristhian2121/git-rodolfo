@@ -60,12 +60,17 @@ func TestSelfUpdater_Replace_ReplacesRunningExecutable(t *testing.T) {
 		t.Fatalf("binary was not replaced as expected; got %d bytes, want marker content", len(got))
 	}
 
-	info, err := os.Stat(copyPath)
-	if err != nil {
-		t.Fatalf("Stat: %v", err)
-	}
-	if info.Mode().Perm()&0o100 == 0 {
-		t.Fatalf("expected the replaced file to remain executable, got mode %v", info.Mode())
+	if runtime.GOOS != "windows" {
+		// Windows has no POSIX execute bit — os.Stat there synthesizes
+		// mode bits from the read-only attribute alone, never 0100
+		// regardless of the file's actual (extension-based) executability.
+		info, err := os.Stat(copyPath)
+		if err != nil {
+			t.Fatalf("Stat: %v", err)
+		}
+		if info.Mode().Perm()&0o100 == 0 {
+			t.Fatalf("expected the replaced file to remain executable, got mode %v", info.Mode())
+		}
 	}
 
 	if runtime.GOOS == "windows" {
