@@ -177,17 +177,18 @@ func windowsKeyPermissionIssue(path string) (cause, fixCommand string, err error
 		}
 		for _, identity := range windowsBroadIdentities {
 			if strings.Contains(line, identity) {
-				// One icacls call, not two: /inheritance:r strips
-				// inherited entries, /remove:g drops any explicit grant
-				// for the broad identities themselves (/grant:r alone
-				// only replaces the *named* trustee's own entry, leaving
-				// others like this one untouched), and /grant:r leaves
-				// the current user with sole access. No "&&"/"%VAR%"
-				// shell syntax, so it works pasted into cmd.exe or
-				// PowerShell alike.
+				// One icacls call, not several chained with "&&": /reset
+				// clears every explicit ACE first (including whichever
+				// broad grant was just detected — /grant:r alone only
+				// replaces the *named* trustee's own entry, leaving
+				// others untouched), /inheritance:r drops what inheriting
+				// then re-adds, and /grant:r leaves the current user with
+				// sole access. %USERNAME% is resolved here rather than
+				// left for the shell to expand, since PowerShell (the
+				// Windows default) doesn't do %VAR% expansion at all.
 				user := os.Getenv("USERNAME")
 				return fmt.Sprintf("permissions are too open: %q has explicit access", identity),
-					fmt.Sprintf(`icacls "%s" /inheritance:r /remove:g "Everyone" "BUILTIN\Users" "Authenticated Users" /grant:r "%s":F`, path, user), nil
+					fmt.Sprintf(`icacls "%s" /reset /inheritance:r /grant:r "%s":F`, path, user), nil
 			}
 		}
 	}
